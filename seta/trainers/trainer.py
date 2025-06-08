@@ -5,6 +5,9 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..core.simulation import Simulator
+from ..environment.environment import Environment
+
 class Trainer:
     """
     Encapsulates the training loop, early stopping, and periodic plotting.
@@ -13,7 +16,7 @@ class Trainer:
     def __init__(
         self,
         decision_net: nn.Module,
-        simulator,
+        simulator : Simulator,
         dataset,
         device: torch.device,
         num_epochs: int = 50,
@@ -51,9 +54,12 @@ class Trainer:
         self.lr = lr
         self.validation_split = validation_split
         self.patience = patience
+
         self.visualize = visualize
+
         self.curve_interval = curve_interval
         self.num_example_curves = num_example_curves
+        
         self.output_model_path = output_model_path
 
         # Prepare train/val split
@@ -94,17 +100,19 @@ class Trainer:
             self.decision_net.train()
             running_train_loss = 0.0
 
-            for temps_batch, true_curves in self.train_loader:
-                temps_batch = temps_batch.to(self.device)
+            for envs_batch, true_curves in self.train_loader:
+                envs_batch = envs_batch.to(self.device)
                 true_curves = true_curves.to(self.device)
 
                 optimizer.zero_grad()
                 batch_preds = []
 
-                for i in range(temps_batch.shape[0]):
-                    temp_i = temps_batch[i].item()
-                    pred_curve_i = self.simulator.run(temp_i)    # Tensor (T,)
+                for i in range(envs_batch.shape[0]):
+                    env_i = envs_batch[i]
+                    env = Environment(env_i[0],env_i[1])
+                    pred_curve_i = self.simulator.run(env, "train", 0)    # Tensor (T,)
                     batch_preds.append(pred_curve_i.unsqueeze(0))  # shape (1, T)
+
 
                 batch_pred = torch.cat(batch_preds, dim=0)  # shape (batch_size, T)
                 loss = criterion(batch_pred, true_curves)
@@ -119,14 +127,15 @@ class Trainer:
             self.decision_net.eval()
             running_val_loss = 0.0
             with torch.no_grad():
-                for temps_v, true_curves_v in self.val_loader:
-                    temps_v = temps_v.to(self.device)
+                for envs_v, true_curves_v in self.val_loader:
+                    envs_v = envs_v.to(self.device)
                     true_curves_v = true_curves_v.to(self.device)
 
                     batch_preds_v = []
-                    for i in range(temps_v.shape[0]):
-                        temp_iv = temps_v[i].item()
-                        pred_curve_iv = self.simulator.run(temp_iv)
+                    for i in range(envs_v.shape[0]):
+                        env_iv = envs_v[i]
+                        env = Environment(env_iv[0],env_iv[1])
+                        pred_curve_iv = self.simulator.run(env)
                         batch_preds_v.append(pred_curve_iv.unsqueeze(0))
                     batch_pred_v = torch.cat(batch_preds_v, dim=0)
                     loss_v = criterion(batch_pred_v, true_curves_v)
@@ -179,16 +188,17 @@ class Trainer:
             for i in range(self.num_example_curves):
                 temp_i = self.example_temps[i]
                 true_curve_i = self.example_true_curves[i]
-                pred_curve_i = self.simulator.run(temp_i).cpu().numpy()
+                env = Environment(temp_i[0], temp_i[1])
+                pred_curve_i = self.simulator.run(env).cpu().numpy()
 
-                t_axis = np.arange(self.simulator.T)
+                t_axis = np.arange(self.simulator.T_max)
                 plt.plot(
                     t_axis,
                     true_curve_i,
                     linestyle="--",
                     linewidth=1.5,
                     alpha=0.6,
-                    label=f"True #{i+1} (T={temp_i:.1f}°C)"
+                    label=f"True #{i+1} (T={temp_i[0]:.1f}°C)"
                 )
                 plt.plot(
                     t_axis,
@@ -196,7 +206,7 @@ class Trainer:
                     linestyle="-",
                     linewidth=2.0,
                     alpha=0.8,
-                    label=f"Pred #{i+1} (T={temp_i:.1f}°C)"
+                    label=f"Pred #{i+1} (T={temp_i[0]:.1f}°C)"
                 )
 
             plt.title(f"Epoch {epoch}: Example Curves")
@@ -214,8 +224,8 @@ class Trainer:
         """
         epochs = np.arange(1, len(train_losses) + 1)
         plt.figure(figsize=(8, 5))
-        plt.semilogy(epochs, train_losses, label="Train Loss", marker="o")
-        plt.semilogy(epochs, val_losses,   label="Val Loss",   marker="x")
+        plt.plot(epochs, train_losses, label="Train Loss", marker="o")
+        plt.plot(epochs, val_losses,   label="Val Loss",   marker="x")
         plt.title("Training & Validation Loss")
         plt.xlabel("Epoch")
         plt.ylabel("MSE Loss")

@@ -28,8 +28,8 @@ def logistic_curve_fn(time_tensor: torch.Tensor, temperature: float) -> torch.Te
 
 def main():
     # Choose mode = “train” or “infer”
-    #mode = "train"
-    mode = "infer"
+    mode = "train"
+    #mode = "infer"
 
     # Choose decision network type: "mlp", "linear", "lstm", or "gnn"
     decision_type = "mlp"  
@@ -50,8 +50,8 @@ def main():
     W_initial_train = 1
     S_initial_train = 1
     validation_split = 0.2
-    patience = 10
-    curve_interval = 50
+    patience = 12
+    curve_interval = 15
     num_example_curves = 4
 
     # ─── Inference Configuration ────────────────────────────────────────

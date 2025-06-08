@@ -1,16 +1,28 @@
 import torch
 from torch_geometric.utils import dense_to_sparse
-
-from ..thinkers.decision_networks import (
-    MLPDecisionNetwork,
-    LinearDecisionNetwork,
-    LSTMDecisionNetwork,
-    GNNDecisionNetwork,
-)
+from typing import Dict, List, Any, Union
+from dataclasses import fields 
 
 from ..agents.nodes import (
-    WorkerAgent,
-    SpawnerAgent
+    Agent, AgentState,
+    WorkerAgent, WorkerState,
+    SpawnerAgent, SpawnerState
+)
+
+from ..agents.system import (
+    System, SystemState
+)
+
+from ..dynamics.dynamic import (
+    Dynamics
+)
+
+from ..thinkers.thinkers import (
+    ThinkerBase
+)
+
+from ..environment.environment import (
+    Environment
 )
 
 class Simulator:
@@ -27,155 +39,110 @@ class Simulator:
 
     def __init__(
         self,
-        T: int,
-        W_initial: int,
-        S_initial: int,
-        decision_net: torch.nn.Module,
+        T_max: int,
+        system : System,
+        system_dynamic: Dynamics,
+        decision_net: ThinkerBase,
+        act_rule : callable,
         device: torch.device,
     ):
-        self.T = T
-        self.W_initial = W_initial
-        self.S_initial = S_initial
+        self.T_max = T_max
+        self.system = system
+        self.system_dynamics = system_dynamic
+
+        # per ogni net una act rule (e più avanti un output per loss)
         self.decision_net = decision_net
+        self.act_rule = act_rule
+
         self.device = device
 
-    def run(self, temperature: float) -> torch.Tensor:
+
+    def run(
+        self,
+        environment: Environment,
+        mode : str = "train",
+        verbose: int = 0
+    ) -> torch.Tensor:
         """
         Run a single simulation from t=0 … T-1 at fixed temperature.
 
+        Args:
+        - temperature    : float, fixed temperature for this simulation
+        - verbose        : 0 = silent, 1 = major announcements, 2 = detailed step-by-step
+        - return_history : if True, return a dict with extra diagnostics; otherwise, return only the (T,) tensor
+
         Returns:
-          - Tensor of shape (T,) with predicted W‐counts at each time step.
+        If return_history=False:
+            - Tensor of shape (T,) with predicted W‐counts at each time step.
+
+        If return_history=True:
+            - Dict with keys:
+                "pred_curve"   : Tensor (T,) of predicted W‐counts
+                "pred_scalars" : List[float] of length T
+                "worker_counts": List[int]   of length T
+                "system_states": List[System] of length T (deep copies after evolve)
+                "timestamps"   : List[int]   of length T
         """
 
-        temp_scalar = float(temperature)
+        # 1) Initialize a fresh System
+        self.system.initialize_system(environment,1,1)
 
-        # 1) Initialize agent pools
-        workers = [WorkerAgent(initial_age=0.0) for _ in range(self.W_initial)]
-        spawners = [SpawnerAgent(initial_age=0.0) for _ in range(self.S_initial)]
+        if verbose >= 1:
+            print(f"\n=== Starting simulation - Mode: {mode} ===")
+        
+        if verbose >= 2:
+            self.system.plot_graph()
 
-        # If LSTMDecisionNetwork, clear its hidden state:
-        if isinstance(self.decision_net, LSTMDecisionNetwork):
+        # 2) If using an LSTMThinker (or any Thinker with reset), reset now
+        if hasattr(self.decision_net, "reset"):
             self.decision_net.reset()
+            if verbose >= 2:
+                print("Decision network internal state reset.")
 
-        preds = []
+        preds_run = []
 
-        for t in range(self.T):
-            # — PHASE 1: SENSE — 
-            current_temp = temp_scalar
+        # 3) Main time‐step loop
+        for t in range(self.T_max):
+            # — PHASE 1: SENSE —
+            if verbose >= 3:
+                self.system.plot_graph()
 
-            # — PHASE 2: EVOLVE — increment ages
-            for w in workers:
-                w.step_age()
-            for s in spawners:
-                s.step_age()
+            if verbose >= 2:
+                print(f"[t={t}] Phase 1 (Sense)")
+
+            self.system.read_env(env= environment)
+            
+            # — PHASE 2: EVOLVE —
+            if verbose >= 2:
+                print(f"[t={t}] Phase 2 (Evolve): applying dynamics to all agents.")
+
+            self.system_dynamics.apply(system=self.system)
+           
+            if verbose >= 3:
+                for idx, ag in enumerate(self.system.agents):
+                    print(f"    Agent {idx} ({self.system.types[idx]}): {ag.get_state_dict()}")
 
             # — PHASE 3: DECISION —
-            if isinstance(self.decision_net, GNNDecisionNetwork):
-                # Build a “chain graph” of (workers…spawner) in a line
-                all_agents = workers + spawners    # list of Agent
-                N = len(all_agents)
-                ages_list = [agent.age for agent in all_agents]
-                # ages_tensor: (N, 1)
-                ages_tensor = torch.tensor(
-                    ages_list, dtype=torch.float32, device=self.device
-                ).unsqueeze(1)
+            if verbose >= 2:
+                print(f"[t={t}] Phase 3 (Think)")
 
-                # Build “chain” adjacency (i ↔ i+1 for i=0..N-2)
-                if N == 1:
-                    edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
-                else:
-                    row = []
-                    col = []
-                    for i_node in range(N - 1):
-                        row += [i_node, i_node + 1]
-                        col += [i_node + 1, i_node]
-                    edge_index = torch.tensor([row, col], dtype=torch.long, device=self.device)
+            pred = self.decision_net.forward(system=self.system, t=t)
+            preds_run.append(pred)
+            
 
-                batch = torch.zeros(N, dtype=torch.long, device=self.device)  # single‐graph batch
+            # — PHASE 4: REFLECT —
+            if verbose >= 2:
+                print(f"[t={t}] Phase 4 (Act)")
 
-                pred_W_tensor = self.decision_net(
-                    ages_tensor, edge_index, batch, current_temp, float(t)
-                )
-                pred_W_scalar = float(pred_W_tensor.item())
+            self.act_rule(self.system, pred)
 
-            else:
-                # MLP / Linear / LSTM: input = [W_count, temp, t]
-                W_count = len(workers)
-                feature_tensor = torch.tensor(
-                    [[W_count, current_temp, float(t)]],
-                    dtype=torch.float32,
-                    device=self.device,
-                )  # shape (1, 3)
 
-                pred_W_tensor = self.decision_net(feature_tensor)  # (1,)
-                pred_W_scalar = float(pred_W_tensor.item())
 
-            # — PHASE 4: REFLECT — spawn new workers if pred_W > current W_count
-            W_count = len(workers)
-            delta = pred_W_scalar - W_count
-            if delta > 0.0:
-                n_to_spawn = int(torch.ceil(torch.tensor(delta)).item())
-                for _ in range(n_to_spawn):
-                    workers.append(WorkerAgent(initial_age=0.0))
+            
+      
+        if verbose >= 1:
+            print(f"=== Simulation complete.")
+        
+        if mode=="train":
+            return torch.cat(preds_run, dim=0)  # Tensor of shape (T,)
 
-            preds.append(pred_W_tensor)
-
-        return torch.cat(preds, dim=0)  # Tensor of shape (T,)
-
-    def simulate_graphs(self, temperature: float):
-        """
-        Only meaningful if decision_net is GNNDecisionNetwork:
-        Returns a list of (ages_tensor, edge_index) for each time step 0..T-1.
-        Otherwise returns [].
-        """
-        if not isinstance(self.decision_net, GNNDecisionNetwork):
-            return []
-
-        temp_scalar = float(temperature)
-        workers = [WorkerAgent(initial_age=0.0) for _ in range(self.W_initial)]
-        spawners = [SpawnerAgent(initial_age=0.0) for _ in range(self.S_initial)]
-
-        # Reset GNN hidden state (no‐op, but for uniformity)
-        self.decision_net.reset()
-
-        graphs = []
-
-        for t in range(self.T):
-            # Increment ages
-            for w in workers:
-                w.step_age()
-            for s in spawners:
-                s.step_age()
-
-            all_agents = workers + spawners
-            N = len(all_agents)
-            ages_list = [agent.age for agent in all_agents]
-            ages_tensor = torch.tensor(ages_list, dtype=torch.float32).unsqueeze(1)  # (N,1)
-
-            if N == 1:
-                edge_index = torch.empty((2, 0), dtype=torch.long)
-            else:
-                row = []
-                col = []
-                for i_node in range(N - 1):
-                    row += [i_node, i_node + 1]
-                    col += [i_node + 1, i_node]
-                edge_index = torch.tensor([row, col], dtype=torch.long)  # (2, 2*(N-1))
-
-            graphs.append((ages_tensor.cpu(), edge_index.cpu()))
-
-            # Keep evolving according to the GNN’s decision (but no plotting here)
-            ages_tensor_device = ages_tensor.to(self.device)
-            batch = torch.zeros(N, dtype=torch.long, device=self.device)
-            pred_W_tensor = self.decision_net(
-                ages_tensor_device, edge_index.to(self.device), batch, temp_scalar, float(t)
-            )
-            pred_W_scalar = float(pred_W_tensor.item())
-            W_count = len(workers)
-            delta = pred_W_scalar - W_count
-            if delta > 0.0:
-                n_to_spawn = int(torch.ceil(torch.tensor(delta)).item())
-                for _ in range(n_to_spawn):
-                    workers.append(WorkerAgent(initial_age=0.0))
-
-        return graphs
