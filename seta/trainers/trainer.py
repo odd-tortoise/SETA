@@ -96,7 +96,6 @@ class Trainer:
 
         print(f"Starting training (patience={self.patience} epochs) …")
         for epoch in range(1, self.num_epochs + 1):
-            print(f"STARTING EPOCH {epoch}")
             # — Training Phase —
             self.decision_net.train()
             running_train_loss = 0.0
@@ -109,7 +108,7 @@ class Trainer:
                 batch_preds = []
 
                 for i in range(envs_batch.shape[0]):
-                    print(f"batch el {i}")
+
                     env_i = envs_batch[i]
                     env = Environment(env_i)
                     pred_curve_i = self.simulator.run(env, "train", 0)    # Tensor (T,)
