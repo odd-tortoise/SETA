@@ -56,3 +56,35 @@ class CustomFunctionDataset(Dataset):
         env_tensor = float(self.temperatures[idx].item())
         curve = self.curves[idx]  # Tensor of shape (T,)
         return env_tensor, curve
+    
+
+import numpy as np
+
+class OfflineRBFInterpolationDataset(Dataset):
+    """
+    Loads precomputed (temperature, curve) pairs from an offline .npz dataset file.
+    
+    Expects the .npz file to contain:
+      - 'times': 1D array of time steps, shape (T,)
+      - 'temperatures': 1D array of sampled temperatures, shape (num_examples,)
+      - 'curves': 2D array of curves, shape (num_examples, T)
+    """
+
+    def __init__(self, npz_path: str):
+        data = np.load(npz_path)
+        self.times = data['times']        # shape (T,)
+        self.temperatures = data['temperatures']  # shape (num_examples,)
+        self.curves = data['curves']      # shape (num_examples, T)
+
+        # Convert to torch tensors for convenience
+        self.temperatures = torch.from_numpy(self.temperatures).float()
+        self.curves = torch.from_numpy(self.curves).float()
+
+    def __len__(self):
+        return len(self.temperatures)
+
+    def __getitem__(self, idx):
+        temp = self.temperatures[idx]  # scalar tensor
+        curve = self.curves[idx]       # tensor shape (T,)
+        return temp, curve
+
