@@ -88,7 +88,7 @@ def main():
     dyn.register_rule("W", worker_rule)
 
     def spawn_node_SAM(system, prediction):
-        current_W = system.types.count("W")
+        current_W = system.types.count("S")
         delta = prediction - current_W
         if delta > 0.0:
             n_to_spawn = int(torch.ceil(torch.tensor(delta)).item())

@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 import numpy as np
 
+import time
+
 from ..core.simulation import Simulator
 from ..environment.environment import Environment
 
@@ -111,15 +113,17 @@ class Trainer:
 
                     env_i = envs_batch[i]
                     env = Environment(env_i)
-                    pred_curve_i = self.simulator.run(env, "train", 0)    # Tensor (T,)
+                    pred_curve_i = self.simulator.run(env, "train", 1)    # Tensor (T,)
                     batch_preds.append(pred_curve_i.unsqueeze(0))  # shape (1, T)
 
-
+                t0 = time.time()
+           
                 batch_pred = torch.cat(batch_preds, dim=0)  # shape (batch_size, T)
                 loss = criterion(batch_pred, true_curves)
                 loss.backward()
                 optimizer.step()
                 running_train_loss += loss.item()
+                print("Batch update: ",time.time() - t0)
 
             train_loss = running_train_loss / len(self.train_loader)
             train_losses.append(train_loss)

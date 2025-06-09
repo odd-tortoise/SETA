@@ -2,6 +2,8 @@ import torch
 from torch_geometric.utils import dense_to_sparse
 from typing import Dict, List, Any, Union
 from dataclasses import fields 
+import time
+from collections import defaultdict
 
 from ..agents.system import (
     System, SystemState
@@ -85,16 +87,18 @@ class Simulator:
         if verbose >= 1:
             print(f"\n=== Starting simulation - Mode: {mode} ===")
         
-        if verbose >= 2:
+        if verbose >= 3:
             self.system.plot_graph(folder=output+"init")
 
         # 2) If using an LSTMThinker (or any Thinker with reset), reset now
-        if hasattr(self.decision_net, "reset"):
-            self.decision_net.reset()
-            if verbose >= 2:
-                print("Decision network internal state reset.")
+        #if hasattr(self.decision_net, "reset"):
+        #    self.decision_net.reset()
+        #    if verbose >= 2:
+        #        print("Decision network internal state reset.")
 
         preds_run = []
+        
+        phase_times = defaultdict(float)
 
         # 3) Main time‐step loop
         for t in range(self.T_max):
@@ -105,13 +109,17 @@ class Simulator:
             if verbose >= 2:
                 print(f"[t={t}] Phase 1 (Sense)")
 
-            self.system.read_env(env= environment)
+            t0 = time.time()
+            self.system.read_env(env=environment)
+            phase_times["sense"] += time.time() - t0
             
             # — PHASE 2: EVOLVE —
             if verbose >= 2:
                 print(f"[t={t}] Phase 2 (Evolve): applying dynamics to all agents.")
 
+            t0 = time.time()
             self.system_dynamics.apply(system=self.system)
+            phase_times["evolve"] += time.time() - t0
            
             if verbose >= 3:
                 for idx, ag in enumerate(self.system.nodes):
@@ -121,23 +129,32 @@ class Simulator:
             if verbose >= 2:
                 print(f"[t={t}] Phase 3 (Think)")
 
+            t0 = time.time()
             pred = self.decision_net.forward(system=self.system, t=t)
             preds_run.append(pred)
+            phase_times["think"] += time.time() - t0
             
 
             # — PHASE 4: REFLECT —
             if verbose >= 2:
                 print(f"[t={t}] Phase 4 (Act)")
 
+            t0 = time.time()
             self.act_rule(self.system, pred)
-
+            phase_times["act"] += time.time() - t0
 
 
             
       
         if verbose >= 1:
             print(f"=== Simulation complete.")
-        
+    
+        # Report average phase times
+        if verbose >= 1:
+            print("\n--- Average Phase Times (per step) ---")
+            for phase in ["sense", "evolve", "think", "act"]:
+                avg_time = phase_times[phase] / self.T_max
+                print(f"{phase.capitalize():>7}: {avg_time:.4f} sec")
         if mode=="train":
             return torch.cat(preds_run, dim=0)  # Tensor of shape (T,)
 
