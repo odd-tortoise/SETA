@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Union
 from dataclasses import dataclass, asdict, fields
 
 @dataclass
-class AgentState:
+class NodeState:
     """
     Base dataclass for an agent’s state.  
     Currently holds only 'age', but can be extended with new fields (workload, energy, etc.).
@@ -12,33 +12,37 @@ class AgentState:
 
 
 @dataclass
-class WorkerState(AgentState):
+class StemState(NodeState):
     """
     State for a WorkerAgent. Inherits 'age', and may add e.g. 'workload' in the future.
     """
     size: float = 1.0
 
+@dataclass
+class LeafState(NodeState):
+    """
+    State for a WorkerAgent. Inherits 'age', and may add e.g. 'workload' in the future.
+    """
+    size: float = 1.0
 
 @dataclass
-class SpawnerState(AgentState):
+class SAMState(NodeState):
     """
     State for a SpawnerAgent. Inherits 'age', and may add e.g. 'fertility' in the future.
     """
-    fertility: float = 1.0
-
-
+    
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1) Agent Definitions (using dataclass states)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class Agent:
+class Node:
     """
     Base class for any agent. Holds a dataclass ‘state’ instance
     whose fields can be converted to a vector for ML / GNN usage.
     """
-    def __init__(self, state: AgentState):
+    def __init__(self, state: NodeState):
         """
         Args:
           - state: instance of AgentState (or subclass)
@@ -73,21 +77,32 @@ class Agent:
         return asdict(self.state)
 
 
-class WorkerAgent(Agent):
+class StemNode(Node):
     """
     Worker agent. Uses WorkerState by default.
     """
-    def __init__(self, state: Optional[WorkerState] = None):
+    def __init__(self, state: Optional[StemState] = None):
         if state is None:
-            state = WorkerState()
+            state = StemState()
+        super().__init__(state)
+
+class SAMNode(Node):
+    """
+    Worker agent. Uses WorkerState by default.
+    """
+    def __init__(self, state: Optional[SAMState] = None):
+        if state is None:
+            state = SAMState()
+        super().__init__(state)
+
+class LeafNode(Node):
+    """
+    Worker agent. Uses WorkerState by default.
+    """
+    def __init__(self, state: Optional[LeafState] = None):
+        if state is None:
+            state = LeafState()
         super().__init__(state)
 
 
-class SpawnerAgent(Agent):
-    """
-    Spawner agent. Uses SpawnerState by default.
-    """
-    def __init__(self, state: Optional[SpawnerState] = None):
-        if state is None:
-            state = SpawnerState()
-        super().__init__(state)
+

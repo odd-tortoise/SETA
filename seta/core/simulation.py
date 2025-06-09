@@ -3,12 +3,6 @@ from torch_geometric.utils import dense_to_sparse
 from typing import Dict, List, Any, Union
 from dataclasses import fields 
 
-from ..agents.nodes import (
-    Agent, AgentState,
-    WorkerAgent, WorkerState,
-    SpawnerAgent, SpawnerState
-)
-
 from ..agents.system import (
     System, SystemState
 )
@@ -61,7 +55,8 @@ class Simulator:
         self,
         environment: Environment,
         mode : str = "train",
-        verbose: int = 0
+        verbose: int = 0,
+        output : str = None
     ) -> torch.Tensor:
         """
         Run a single simulation from t=0 … T-1 at fixed temperature.
@@ -91,7 +86,7 @@ class Simulator:
             print(f"\n=== Starting simulation - Mode: {mode} ===")
         
         if verbose >= 2:
-            self.system.plot_graph()
+            self.system.plot_graph(folder=output+"init")
 
         # 2) If using an LSTMThinker (or any Thinker with reset), reset now
         if hasattr(self.decision_net, "reset"):
@@ -105,7 +100,7 @@ class Simulator:
         for t in range(self.T_max):
             # — PHASE 1: SENSE —
             if verbose >= 3:
-                self.system.plot_graph()
+                self.system.plot_graph(folder=output +f"{t}" )
 
             if verbose >= 2:
                 print(f"[t={t}] Phase 1 (Sense)")
@@ -119,8 +114,8 @@ class Simulator:
             self.system_dynamics.apply(system=self.system)
            
             if verbose >= 3:
-                for idx, ag in enumerate(self.system.agents):
-                    print(f"    Agent {idx} ({self.system.types[idx]}): {ag.get_state_dict()}")
+                for idx, ag in enumerate(self.system.nodes):
+                    print(f"    Node {idx} ({self.system.types[idx]}): {ag.get_state_dict()}")
 
             # — PHASE 3: DECISION —
             if verbose >= 2:

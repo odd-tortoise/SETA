@@ -1,4 +1,4 @@
-from seta.agents.nodes import SpawnerAgent, WorkerAgent
+from seta.agents.nodes import StemNode,SAMNode,LeafNode
 from seta.agents.system import System
 
 from seta.dynamics.dynamic import Dynamics

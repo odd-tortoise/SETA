@@ -96,6 +96,7 @@ class Trainer:
 
         print(f"Starting training (patience={self.patience} epochs) …")
         for epoch in range(1, self.num_epochs + 1):
+            print(f"STARTING EPOCH {epoch}")
             # — Training Phase —
             self.decision_net.train()
             running_train_loss = 0.0
@@ -108,8 +109,9 @@ class Trainer:
                 batch_preds = []
 
                 for i in range(envs_batch.shape[0]):
+                    print(f"batch el {i}")
                     env_i = envs_batch[i]
-                    env = Environment(env_i[0],env_i[1])
+                    env = Environment(env_i)
                     pred_curve_i = self.simulator.run(env, "train", 0)    # Tensor (T,)
                     batch_preds.append(pred_curve_i.unsqueeze(0))  # shape (1, T)
 
@@ -134,7 +136,7 @@ class Trainer:
                     batch_preds_v = []
                     for i in range(envs_v.shape[0]):
                         env_iv = envs_v[i]
-                        env = Environment(env_iv[0],env_iv[1])
+                        env = Environment(env_iv)
                         pred_curve_iv = self.simulator.run(env)
                         batch_preds_v.append(pred_curve_iv.unsqueeze(0))
                     batch_pred_v = torch.cat(batch_preds_v, dim=0)
@@ -188,7 +190,7 @@ class Trainer:
             for i in range(self.num_example_curves):
                 temp_i = self.example_temps[i]
                 true_curve_i = self.example_true_curves[i]
-                env = Environment(temp_i[0], temp_i[1])
+                env = Environment(temp_i)
                 pred_curve_i = self.simulator.run(env).cpu().numpy()
 
                 t_axis = np.arange(self.simulator.T_max)
@@ -198,7 +200,7 @@ class Trainer:
                     linestyle="--",
                     linewidth=1.5,
                     alpha=0.6,
-                    label=f"True #{i+1} (T={temp_i[0]:.1f}°C)"
+                    label=f"True #{i+1} (T={temp_i:.1f}°C)"
                 )
                 plt.plot(
                     t_axis,
@@ -206,7 +208,7 @@ class Trainer:
                     linestyle="-",
                     linewidth=2.0,
                     alpha=0.8,
-                    label=f"Pred #{i+1} (T={temp_i[0]:.1f}°C)"
+                    label=f"Pred #{i+1} (T={temp_i:.1f}°C)"
                 )
 
             plt.title(f"Epoch {epoch}: Example Curves")

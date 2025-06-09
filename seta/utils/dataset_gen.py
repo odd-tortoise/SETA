@@ -15,8 +15,6 @@ class CustomFunctionDataset(Dataset):
         num_examples: int,
         temp_min: float,
         temp_max: float,
-        hum_min: float,
-        hum_max: float,
         curve_fn,
     ):
         """
@@ -30,19 +28,17 @@ class CustomFunctionDataset(Dataset):
         self.T = T
         self.temp_min = temp_min
         self.temp_max = temp_max
-        self.hum_min = hum_min
-        self.hum_max = hum_max
         self.curve_fn = curve_fn
 
         # Randomly sample temperatures in [temp_min, temp_max]
         self.temperatures = temp_min + (temp_max - temp_min) * torch.rand(num_examples)
-        self.humidity = hum_min + (hum_max-hum_min)*torch.rand(num_examples)
-
+        
         # Precompute the time grid once
         self.t = torch.arange(0, T, dtype=torch.float32)  # shape (T,)
 
         # Precompute all curves so __getitem__ is cheap
         self.curves = []
+        print("Building Dataset")
         for i in range(num_examples):
             temp_val = float(self.temperatures[i].item())
             curve = self.curve_fn(self.t, temp_val)
@@ -57,8 +53,6 @@ class CustomFunctionDataset(Dataset):
         return len(self.temperatures)
 
     def __getitem__(self, idx):
-        temp = float(self.temperatures[idx].item())
-        hum = float(self.humidity[idx].item())
-        env_tensor = torch.tensor([temp,hum])
+        env_tensor = float(self.temperatures[idx].item())
         curve = self.curves[idx]  # Tensor of shape (T,)
         return env_tensor, curve

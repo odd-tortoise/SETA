@@ -26,25 +26,37 @@ def logistic_curve_fn(time_tensor: torch.Tensor, temperature: float) -> torch.Te
     return K / (1.0 + (K - 1.0) * exp_term)
 
 def main():
-    
+
+    import pickle
+    import numpy as np
+
+    # Load the RBF interpolation from the file
+    with open('rbf_interpolation_internodes.pkl', 'rb') as f:
+        rbf_loaded = pickle.load(f)
+
+
+    def curve_data(time_tensor: torch.Tensor, temperature: float) -> torch.Tensor:
+        pred = []
+        for el in time_tensor:
+            pred.append(torch.tensor(rbf_loaded(np.array([el.item(),temperature]).reshape(1,-1))).float())
+        return torch.cat(pred, dim=0)
+
     mode = "train"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # ─── Training Configuration ──────────────────────────────────────────
-    T_max= 50
+    T_max= 100
     epochs = 100
     batch_size = 8
     learning_rate = 1e-2
-    num_examples = 100
-    temp_min = 15.0
-    temp_max = 30.0
-    hum_min = 70
-    hum_max = 90
+    num_examples = 80
+    temp_min = 20.0
+    temp_max = 40.0
     output_model_path = "decision_net.pth"
     
     validation_split = 0.2
     patience = 12
-    curve_interval = 50
+    curve_interval = 25
     num_example_curves = 4
     
     dataset = CustomFunctionDataset(
@@ -52,9 +64,7 @@ def main():
         num_examples=num_examples,
         temp_min=temp_min,
         temp_max=temp_max,
-        hum_max=hum_max,
-        hum_min=hum_min,
-        curve_fn=logistic_curve_fn
+        curve_fn=curve_data
     )
 
     decision_net = MLPThinker([32,32])
@@ -83,7 +93,7 @@ def main():
         if delta > 0.0:
             n_to_spawn = int(torch.ceil(torch.tensor(delta)).item())
             for _ in range(n_to_spawn):
-                system.add_agent_SAM()
+                system.add_node_SAM()
 
 
     sim = Simulator(
@@ -114,9 +124,9 @@ def main():
     trainer.train()
 
 
-    env_test = Environment(25,89)
+    env_test = Environment(25)
 
-    sim.run(env_test,"train",2)
+    sim.run(env_test,"train",3)
 
 
 

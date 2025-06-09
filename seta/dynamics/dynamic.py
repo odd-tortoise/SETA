@@ -40,7 +40,7 @@ class Dynamics:
           - If a rule is registered for agent_type, call rule_fn(agent, system)
           - Otherwise, do nothing (agent’s state remains the same)
         """
-        for idx, agent in enumerate(system.agents):
+        for idx, agent in enumerate(system.nodes):
             agent_type = system.types[idx]
             rule_fn = self.rules.get(agent_type, None)
             if rule_fn is not None:
