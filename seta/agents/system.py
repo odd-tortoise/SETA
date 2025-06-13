@@ -4,6 +4,10 @@ from torch_geometric.data import Data
 from typing import Dict, List, Optional, Union
 import networkx as nx
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+       
+import numpy as np
 from dataclasses import dataclass, asdict, fields
 
 from .nodes import Node, NodeState
@@ -439,16 +443,63 @@ class System:
 
         return new_idx
     
-    def graph_to_plant(self, folder = None):
-        from mpl_toolkits.mplot3d import Axes3D
-        import matplotlib.pyplot as plt
-        import numpy as np
+    def _leaf_function_standard(self, angle: float, t: float) -> np.ndarray:
+        """
+        Standard leaf shape function.
+
+        Args:
+            angle (float): The angle for the leaf shape.
+            t (float): The time parameter for the leaf shape.
+
+        Returns:
+            np.ndarray: The coordinates of the leaf shape.
+        """
 
         def gieles(theta: float, m: int, n1: float, n2: float, n3: float, a: float, b: float) -> float:
-                    r = (np.abs(np.cos(m * theta / 4) / a)) ** n2 + (np.abs(np.sin(m * theta / 4) / b)) ** n3
-                    r = r ** (-1 / n1)
-                    return r
+            r = (np.abs(np.cos(m * theta / 4) / a)) ** n2 + (np.abs(np.sin(m * theta / 4) / b)) ** n3
+            r = r ** (-1 / n1)
+            return r
 
+        r = gieles(angle, 2, 1, 1, 1, 2 * t, t)
+        x = r * np.cos(angle) + t
+        y = r * np.sin(angle)
+
+        return np.array([x, y, 0])
+
+
+    def _generate_leaf_points(self, size , angle_with_z: float = 0, angle_with_y: float = 0, n_points: int = 11) -> List[np.ndarray]:
+        """
+        Generate points for a single leaf.
+
+        Args:
+            state (Any): The state of the node containing required variables.
+            angle_with_z (float): The angle to rotate around the z-axis.
+            angle_with_y (float): The angle to rotate around the y-axis.
+            n_points (int): The number of points to generate along the leaf.
+
+        Returns:
+            List[np.ndarray]: A list of points representing the leaf.
+        """
+        temp_points = [self._leaf_function_standard(theta, size) for theta in np.linspace(0, 2 * np.pi, n_points)]
+
+        rot_y = np.array([
+            [np.cos(angle_with_y), 0, np.sin(angle_with_y)],
+            [0, 1, 0],
+            [-np.sin(angle_with_y), 0, np.cos(angle_with_y)]
+        ])
+
+        rot_z = np.array([
+            [np.cos(angle_with_z), -np.sin(angle_with_z), 0],
+            [np.sin(angle_with_z), np.cos(angle_with_z), 0],
+            [0, 0, 1]
+        ])
+
+        points = [np.dot(rot_y, point) for point in temp_points]
+        points = [np.dot(rot_z, point) for point in points]
+       
+        return points
+
+    def graph_to_plant(self, folder = None):
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -457,7 +508,9 @@ class System:
         current_pos = np.array([0.0, 0.0, 0.0])
         current_z = 0.0
 
+
         leaf_count = 0  # used to alternate leaf placement
+        
 
         for node in self.nodes:
             if isinstance(node, StemNode):
@@ -475,30 +528,91 @@ class System:
 
             elif isinstance(node, LeafNode):
                 size = node.state.size
+                rachid_points = [np.array([0, 0, 0])]
+                leaves_points = []
+                size_pet = size
+                leaves_to_plot = 5
+                rachid_size = size
+                y_angle = 0.7
+                z_angle = 0 if leaf_count % 2 == 0 else np.pi
+
+                while leaves_to_plot > 0:
+                    #add rachid point
+                    rachid_point = rachid_points[-1] + rachid_size * np.array([np.cos(y_angle),0, np.sin(y_angle)])
+                    rachid_points.append(rachid_point)
+                    
+                    if leaves_to_plot >= 2:
+                    
+                        leaf_points_up = self._generate_leaf_points(size ,angle_with_z = np.pi/2, angle_with_y = y_angle)
+                        leaf_points_down = self._generate_leaf_points(size ,angle_with_z = -np.pi/2, angle_with_y = y_angle)
+
+                        petiole_up = np.array([0,size_pet,0])
+                        petiole_down = np.array([0, -size_pet,0])
+
+                        # translate the leaf points to the tip of the rachid
+                        leaf_points_up = [point + rachid_point + petiole_up + current_pos for point in leaf_points_up]
+                        lead_points_down = [point + rachid_point + petiole_down + current_pos for point in leaf_points_down]
+
+                        leaves_points.append(leaf_points_up)
+                        leaves_points.append(lead_points_down)
+
+                        leaves_to_plot -= 2
+
+                    if leaves_to_plot == 1:
+                        # add the leaves on the sides
+                        # add the leaf on the tip 
+                        leaf_point = self._generate_leaf_points(size,angle_with_z = 0, angle_with_y= y_angle)
+                        
+                        
+                        petiole = np.array([size_pet,0,0])
+                        # translate the leaf points to the tip of the rachid
+                        leaf_point = [point + rachid_point + petiole + current_pos for point in leaf_point]
+                        
+
+                        leaves_points.append(leaf_point)
+                        leaves_to_plot -= 1
+
+                    y_angle -= 0.5*y_angle
 
                 
+                z_rotation_angle = z_angle
+                rot_z = np.array([
+                    [np.cos(z_rotation_angle), -np.sin(z_rotation_angle), 0],
+                    [np.sin(z_rotation_angle), np.cos(z_rotation_angle), 0],
+                    [0, 0, 1]
+                ])
+            
+                
+                rotated_leaves = []
+        
+                for leaf in leaves_points:
+                    leaf = [np.dot(rot_z, point) for point in leaf]
+                    rotated_leaves.append(leaf)
+
+                rotated_rachid = [np.dot(rot_z, point) for point in rachid_points]
                 
 
-                theta = np.linspace(0, 2 * np.pi, 15)
-                r = gieles(theta, 2, 1, 1, 1, 2 * size, size)
+
+                leaf_skeletons = rotated_leaves
+                rachid_skeleton = rotated_rachid + current_pos
+                rachid_skeleton = np.array(rachid_skeleton)
+                if rachid_skeleton.size > 0:
+                    ax.plot(rachid_skeleton[:, 0], rachid_skeleton[:, 1], rachid_skeleton[:, 2],
+                            color="purple", label='Rachid Skeleton', linewidth=3)
+                for pos,leaf in enumerate(leaf_skeletons):
+                    leaf = np.array(leaf)
+                    if leaf.size > 0:
+                        ax.plot(leaf[:, 0], leaf[:, 1], leaf[:, 2],
+                                color="orange", label='Leaf Skeleton', linewidth=4)
+                        ax.plot([leaf[0, 0], leaf[-1, 0]], [leaf[0, 1], leaf[-1, 1]], [leaf[0, 2], leaf[-1, 2]], color="orange", linewidth=4)
+
+                        if pos <= len(rachid_skeleton)-1:
+                            ax.plot([leaf[5,0],rachid_skeleton[pos//2 +1 ,0]], [leaf[5,1],rachid_skeleton[pos//2 +1,1]], [leaf[5,2],rachid_skeleton[pos//2+1,2]], color = "blue", linewidth=2)
+
+                ax.plot([leaf[5,0],rachid_skeleton[-1,0]], [leaf[5,1],rachid_skeleton[-1,1]], [leaf[5,2],rachid_skeleton[-1,2]], color = "blue", linewidth=2)
+
+
                 
-                x_circle = r * np.cos(theta) + size
-                y_circle = r * np.sin(theta)
-
-                # Alternate leaf placement: +x quadrant for first, -x for second
-                
-                offset = np.array([size*1.1, 0])
-              
-
-                x = x_circle + current_pos[0] + offset[0]
-                if leaf_count % 2 == 0:
-                    pass
-                else:
-                    x = -x
-                y = y_circle + current_pos[1] + offset[1]
-                z = np.full_like(x, current_z)
-
-                ax.plot(x, y, z, color='orange')
 
                 leaf_count += 1
 

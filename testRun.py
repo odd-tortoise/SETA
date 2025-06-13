@@ -78,7 +78,7 @@ decision_net.load_state_dict(torch.load(model_path, map_location=device))
 env_test = Environment(28)
 sim.T_max = 100
 with torch.no_grad():
-  sim_stem_count = sim.run(env_test,"infer",3, output="out/") # torch tensor
+  sim_stem_count = sim.run(env_test,"infer",3) #, output="out/") # torch tensor
 
 
 import pickle
