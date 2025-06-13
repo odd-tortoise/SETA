@@ -45,7 +45,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # ─── Training Configuration ──────────────────────────────────────────
-    T_max= 100
+    T_max= 110
     epochs = 100
     batch_size = 8
     learning_rate = 1e-2
@@ -85,7 +85,7 @@ def main():
             if system.get_system_var("temperature") > 20.0:
                 agent.state.age += 0.5
 
-    dyn.register_rule("W", worker_rule)
+    dyn.register_rule("S", worker_rule)
 
     def spawn_node_SAM(system, prediction):
         current_W = system.types.count("S")
@@ -123,10 +123,6 @@ def main():
     )
     trainer.train()
 
-
-    env_test = Environment(25)
-
-    sim.run(env_test,"train",3)
 
 
 

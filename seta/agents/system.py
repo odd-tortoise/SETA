@@ -188,21 +188,24 @@ class System:
             return Data(x=x_empty, edge_index=edge_index_empty, batch=batch_empty)
 
         # 1) Determine state-field dimension from the first node's state dataclass
-        sample_state = self.nodes[0].state
-        state_fieldcount = len(fields(sample_state))  # e.g., 2 if WorkerState(age, workload)
+        
+        max_state_dim = max(len(fields(agent.state)) for agent in self.nodes)
+
 
         num_types = self.next_type_idx
-        feature_dim = state_fieldcount
 
         # Build node feature matrix: one-hot(type) concatenated with state vector
-        x = torch.zeros((N, num_types + feature_dim), dtype=torch.float32, device=self.device)
+       
+        # 2) Build feature tensor
+        x = torch.zeros((N, num_types + max_state_dim), dtype=torch.float32, device=self.device)
+
         for i, ag in enumerate(self.nodes):
             t_idx = self.type_to_idx[self.types[i]]
             x[i, t_idx] = 1.0
-            state_vec = ag.get_state_vector()  # length = feature_dim
-            x[i, num_types:num_types + feature_dim] = state_vec.to(self.device)
+            state_vec = ag.get_state_vector(pad_to=max_state_dim)
+            x[i, num_types : num_types + max_state_dim] = state_vec.to(self.device)
 
-        # 2) Build edge_index from edge_list
+
         if len(self.edge_list) == 0:
             edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
         else:
@@ -237,7 +240,7 @@ class System:
                 G.add_edge(u, v)
 
         # Layout
-        pos = nx.spring_layout(G)
+        pos = nx.bfs_layout(G, start = 0, align='horizontal')
 
         # Color nodes by type index
         type_indices = [self.type_to_idx[self.types[i]] for i in range(N)]
@@ -255,6 +258,7 @@ class System:
         plt.tight_layout()
         if folder:
             plt.savefig(folder)
+            plt.close()
         else:   
             plt.show()
 
@@ -317,7 +321,6 @@ class System:
         for key,value in meas.items():
             self.set_system_var(key,value)
 
-
     def reset(self):
         self.nodes: List[Node] = []
 
@@ -333,7 +336,6 @@ class System:
         # Global system state, using a dataclass
         self.system_state = SystemState()
     
-
     def initialize_system(self,env : Environment, w_count, s_count):
         """
         Create a fresh System with W_initial workers and S_initial spawners connected
@@ -377,7 +379,6 @@ class System:
 
         # Set temperature
         self.read_env(env=env)
-
 
     def add_node_SAM(self) -> int:
         """
@@ -437,3 +438,91 @@ class System:
         self.edge_list.append([first_S_idx, new_idx])
 
         return new_idx
+    
+    def graph_to_plant(self, folder = None):
+        from mpl_toolkits.mplot3d import Axes3D
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        def gieles(theta: float, m: int, n1: float, n2: float, n3: float, a: float, b: float) -> float:
+                    r = (np.abs(np.cos(m * theta / 4) / a)) ** n2 + (np.abs(np.sin(m * theta / 4) / b)) ** n3
+                    r = r ** (-1 / n1)
+                    return r
+
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Start plotting from origin
+        current_pos = np.array([0.0, 0.0, 0.0])
+        current_z = 0.0
+
+        leaf_count = 0  # used to alternate leaf placement
+
+        for node in self.nodes:
+            if isinstance(node, StemNode):
+                length = node.state.size
+                # Generate vertical line from current position
+                z = np.linspace(current_z, current_z + length, 10)
+                x = np.full_like(z, current_pos[0])
+                y = np.full_like(z, current_pos[1])
+
+                ax.plot(x, y, z, color='green', linewidth=2)
+
+                # Update current position to top of the stem
+                current_z += length
+                current_pos = np.array([current_pos[0], current_pos[1], current_z])
+
+            elif isinstance(node, LeafNode):
+                size = node.state.size
+
+                
+                
+
+                theta = np.linspace(0, 2 * np.pi, 15)
+                r = gieles(theta, 2, 1, 1, 1, 2 * size, size)
+                
+                x_circle = r * np.cos(theta) + size
+                y_circle = r * np.sin(theta)
+
+                # Alternate leaf placement: +x quadrant for first, -x for second
+                
+                offset = np.array([size*1.1, 0])
+              
+
+                x = x_circle + current_pos[0] + offset[0]
+                if leaf_count % 2 == 0:
+                    pass
+                else:
+                    x = -x
+                y = y_circle + current_pos[1] + offset[1]
+                z = np.full_like(x, current_z)
+
+                ax.plot(x, y, z, color='orange')
+
+                leaf_count += 1
+
+        # Set labels and show
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        size = current_z
+    
+        size = size+1 if size%2!=0 else size
+        
+        ax.set_xlim([-size // 2, size // 2])
+        ax.set_ylim([-size // 2, size // 2])
+        ax.set_zlim([0, size*.8])
+
+        ax.grid(False)
+        ax.axis('off')
+        ax.view_init(elev=30, azim=130)
+
+
+        plt.title("3D Plant Structure")
+        if folder:
+            plt.savefig(folder)
+            plt.close()
+        else:   
+            plt.show()

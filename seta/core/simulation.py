@@ -88,8 +88,15 @@ class Simulator:
             print(f"\n=== Starting simulation - Mode: {mode} ===")
         
         if verbose >= 3:
-            self.system.plot_graph(folder=output+"init")
+            if output is not None:
+                
+                self.system.plot_graph(folder=output+"init")
 
+                self.system.graph_to_plant(folder = output+"init_plant")
+            else:
+                self.system.plot_graph()
+
+                self.system.graph_to_plant()
         # 2) If using an LSTMThinker (or any Thinker with reset), reset now
         #if hasattr(self.decision_net, "reset"):
         #    self.decision_net.reset()
@@ -97,6 +104,7 @@ class Simulator:
         #        print("Decision network internal state reset.")
 
         preds_run = []
+        concrete_run =[]
         
         phase_times = defaultdict(float)
 
@@ -104,7 +112,13 @@ class Simulator:
         for t in range(self.T_max):
             # — PHASE 1: SENSE —
             if verbose >= 3:
-                self.system.plot_graph(folder=output +f"{t}" )
+                if output is not None:
+                    self.system.plot_graph(folder=output +f"{t}" )
+                    self.system.graph_to_plant(folder = output+f"{t}_plant")
+                else:
+                    self.system.plot_graph()
+
+                    self.system.graph_to_plant()
 
             if verbose >= 2:
                 print(f"[t={t}] Phase 1 (Sense)")
@@ -133,6 +147,8 @@ class Simulator:
             pred = self.decision_net.forward(system=self.system, t=t)
             preds_run.append(pred)
             phase_times["think"] += time.time() - t0
+
+            concrete_run.append(self.system.node_counts_by_type()["S"])
             
 
             # — PHASE 4: REFLECT —
@@ -157,4 +173,7 @@ class Simulator:
                 print(f"{phase.capitalize():>7}: {avg_time:.4f} sec")
         if mode=="train":
             return torch.cat(preds_run, dim=0)  # Tensor of shape (T,)
+        if mode=="infer":
+            return concrete_run  # Tensor of shape (T,)
+        
 

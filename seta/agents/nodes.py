@@ -10,6 +10,7 @@ class NodeState:
     """
     age: float = 0.0
 
+   
 
 @dataclass
 class StemState(NodeState):
@@ -23,7 +24,7 @@ class LeafState(NodeState):
     """
     State for a WorkerAgent. Inherits 'age', and may add e.g. 'workload' in the future.
     """
-    size: float = 1.0
+    size: float = 0.1
 
 @dataclass
 class SAMState(NodeState):
@@ -49,12 +50,16 @@ class Node:
         """
         self.state = state
 
-    def get_state_vector(self) -> torch.Tensor:
+    def get_state_vector(self, pad_to: int = 2) -> torch.Tensor:
         """
         Convert the dataclass fields to a 1D tensor, in the declared field order.
         E.g., [age, workload, ...]
         """
         vals = [getattr(self.state, f.name) for f in fields(self.state)]
+
+        if len(vals)<pad_to:
+            for _ in range(pad_to-len(vals)):
+                vals.append(0)
         return torch.tensor(vals, dtype=torch.float32)
 
     def set_state_vector(self, vec: Union[List[float], torch.Tensor]):

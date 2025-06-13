@@ -5,7 +5,7 @@ from seta.dynamics.dynamic import Dynamics
 
 from seta.core.simulation import Simulator
 
-from seta.thinkers.thinkers import (LinearThinker, MLPThinker)
+from seta.thinkers.thinkers import (LinearThinker, MLPThinker, GNNThinker)
 
 from seta.trainers.trainer import Trainer
 

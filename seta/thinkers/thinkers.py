@@ -90,7 +90,7 @@ class MLPThinker(ThinkerBase):
         return nn.Sequential(*layers)
 
     def extract_features(self, system: Any, t: int) -> torch.Tensor:
-        W_count = system.types.count("W")
+        W_count = system.types.count("S")
         temp = system.get_system_var("temperature")
         return torch.tensor([[W_count, temp, float(t)]], dtype=torch.float32, device=self.device)
 
@@ -114,7 +114,7 @@ class LinearThinker(ThinkerBase):
         return nn.Linear(3, 1)
 
     def extract_features(self, system: Any, t: int) -> torch.Tensor:
-        W_count = system.types.count("W")
+        W_count = system.types.count("S")
         temp = system.get_system_var("temperature")
         return torch.tensor([[W_count, temp, float(t)]], dtype=torch.float32, device=self.device)
 
@@ -145,7 +145,7 @@ class LSTMThinker(ThinkerBase):
         return _LSTMWrapper(input_size=3, hidden_size=self.hidden_size, device=self.device)
 
     def extract_features(self, system: Any, t: int) -> torch.Tensor:
-        W_count = system.types.count("W")
+        W_count = system.types.count("S")
         temp = system.get_system_var("temperature")
         return torch.tensor([[W_count, temp, float(t)]], dtype=torch.float32, device=self.device)
 
@@ -214,9 +214,17 @@ class GNNThinker(ThinkerBase):
     def extract_features(self, system: Any, t: int):
         data: Data = system.get_graph_data().to(self.device)
         num_types = system.next_type_idx
-        state_dim = len(fields(system.agents[0].state))  # number of fields in AgentState
-        node_feats = data.x[:, num_types : num_types + state_dim]  # (N, state_dim)
-        return node_feats, data.edge_index, data.batch, float(system.get_system_var("temperature")), float(t)
+        max_state_dim = data.x.size(1) - num_types
+        node_feats = data.x[:, num_types:]  # get only the state part (N, max_state_dim)
+
+        return (
+            node_feats, 
+            data.edge_index, 
+            data.batch, 
+            torch.tensor([system.get_system_var("temperature")], dtype=torch.float32), 
+            torch.tensor([t], dtype=torch.float32)
+        )
+
 
     def process_output(self, raw: torch.Tensor) -> torch.Tensor:
         # raw has shape (1,1) because _GNNWrapper applies Softplus at end
@@ -275,7 +283,7 @@ class _GNNWrapper(nn.Module):
         temperature: float → will be converted to tensor inside
         t:           float → time step
         """
-        h = node_feats.view(-1, 1)  # assume state_dim=1 (only 'age'); if more dims, adjust accordingly
+        h = node_feats.view(-1, 2)  # assume state_dim=1 (only 'age'); if more dims, adjust accordingly
         for conv in self.convs:
             h = conv(h, edge_index)
             h = nn.functional.relu(h)

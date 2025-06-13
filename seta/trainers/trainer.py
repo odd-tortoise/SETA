@@ -113,17 +113,17 @@ class Trainer:
 
                     env_i = envs_batch[i]
                     env = Environment(env_i)
-                    pred_curve_i = self.simulator.run(env, "train", 1)    # Tensor (T,)
+                    pred_curve_i = self.simulator.run(env, "train", 0)    # Tensor (T,)
                     batch_preds.append(pred_curve_i.unsqueeze(0))  # shape (1, T)
 
-                t0 = time.time()
+                # t0 = time.time()
            
                 batch_pred = torch.cat(batch_preds, dim=0)  # shape (batch_size, T)
                 loss = criterion(batch_pred, true_curves)
                 loss.backward()
                 optimizer.step()
                 running_train_loss += loss.item()
-                print("Batch update: ",time.time() - t0)
+                # print("Batch update: ",time.time() - t0)
 
             train_loss = running_train_loss / len(self.train_loader)
             train_losses.append(train_loss)
@@ -229,8 +229,8 @@ class Trainer:
         """
         epochs = np.arange(1, len(train_losses) + 1)
         plt.figure(figsize=(8, 5))
-        plt.plot(epochs, train_losses, label="Train Loss", marker="o")
-        plt.plot(epochs, val_losses,   label="Val Loss",   marker="x")
+        plt.semilogy(epochs, train_losses, label="Train Loss", marker="o")
+        plt.semilogy(epochs, val_losses,   label="Val Loss",   marker="x")
         plt.title("Training & Validation Loss")
         plt.xlabel("Epoch")
         plt.ylabel("MSE Loss")
