@@ -171,6 +171,8 @@ class Simulator:
             for phase in ["sense", "evolve", "think", "act"]:
                 avg_time = phase_times[phase] / self.T_max
                 print(f"{phase.capitalize():>7}: {avg_time:.4f} sec")
+
+                
         if mode=="train":
             return torch.cat(preds_run, dim=0)  # Tensor of shape (T,)
         if mode=="infer":
